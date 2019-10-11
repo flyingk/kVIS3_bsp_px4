@@ -23,9 +23,15 @@ function [] = import_px4(hObject, ~)
 % PX4 Log file
 [file, pathname] = uigetfile('*.ulg');
 
+if (file==0)
+    file = 'log_366_2019-10-8-10-35-52.ulg';
+    pathname = 'C:\Users\matt\OneDrive\Aircraft\Flying_Ambulance\logs\2019-10-08_Field_Trip\';
+end
+    
+
 % Load file
 if file==0
-    disp('Error loading file.')
+    warning('Error loading file.')
     return
 else
     file = fullfile(pathname,file);
@@ -58,6 +64,8 @@ evalc(['!ulog2csv -o ',[path,'csv_',file,'\'],' ',[path,file,extension]]);
 % Loop through each file in the csv folder
 csv_files = dir([csv_folder,'\**\*.csv']);
 
+t_min = inf;
+
 for ii = 1:length(csv_files)
     % Print debug stuff
     data_path = csv_files(ii).folder;
@@ -70,10 +78,12 @@ for ii = 1:length(csv_files)
     
     % Get all the headers and stuff
     data = readtable([data_path,'\',data_file]);
-    varNames = data.Properties.VariableNames;
+    varNames = data.Properties.VariableNames'; ...
+        varNames{1} = 'Time';
     n_channels = numel(varNames);
     
-    varUnits = repmat({'N/A'}, n_channels,1);
+    varUnits = repmat({'N/A'}, n_channels,1); ...
+        varUnits{1} = 's';
     varFrames = repmat({'Unknown Frame'}, n_channels,1);
     
     % Import the data
@@ -81,9 +91,57 @@ for ii = 1:length(csv_files)
     for jj = 1:numel(varNames)
         % I've got this importing individual rows here in case we want to
         % preserve any non-numeric data and put it somewhere
-        fprintf('\t\tFound channel %50s\n', varNames{jj});
+        %fprintf('\t\tFound channel %50s\n', varNames{jj});
         DAT(:,jj) = table2array(data(:,jj));
+        
+        % Remove trailing underscores
+        if strcmp(varNames{jj}(end),'_')
+            varNames{jj} = varNames{jj}(1:end-1);
+        end
+            
     end
+    
+    % Add special fields that PX4 doesn't normally have (because it's stupid)
+    if strcmp(groupName,'vehicle_attitude_0')
+        % Add extra stuff to the labelling
+        varNames  = [varNames; {'roll'};{'pitch'};{'yaw' }];
+        varUnits  = [varUnits; {'deg' };{'deg'  };{'deg' }];
+        varFrames = [varFrames;{'body'};{'body' };{'body'}];
+        
+        % Convert quaternions to euler angles and store
+        quat_angles = DAT(:,5:8);
+        euler_angles = q2e(quat_angles)*180.0/pi;
+        DAT = [ DAT, euler_angles ];
+        
+        % Take t_min from the attitude data
+         t_min = min(t_min,DAT(1,1));
+        
+    end
+    
+    if strcmp(groupName,'vehicle_attitude_setpoint_0')
+        % Add extra stuff to the labelling
+        varNames  = [varNames; {'roll_d'};{'pitch_d'};{'yaw_d' }];
+        varUnits  = [varUnits; {'deg' };{'deg'  };{'deg' }];
+        varFrames = [varFrames;{'body'};{'body' };{'body'}];
+        
+        % Convert quaternions to euler angles and store
+        quat_angles = DAT(:,6:9);
+        euler_angles = q2e(quat_angles)*180.0/pi;
+        DAT = [ DAT, euler_angles ];
+        
+    end
+    
+    if strcmp(groupName,'battery_status_0')
+        % Add extra stuff to the labelling
+        varNames  = [varNames; {'power'}; {'power_filtered'}];
+        varUnits  = [varUnits; {'W'}; {'W'}];
+        varFrames = [varFrames;{'N/A'}; {'N/A'}];
+        
+        % Add power into the system
+        DAT = [ DAT, DAT(:,2).*DAT(:,4), DAT(:,3).*DAT(:,5) ];
+        
+    end
+        
     
     % Generate the kVIS data structure
     fds = kVIS_fdsAddTreeLeaf(fds, groupName, varNames, varNames, varUnits, varFrames, DAT, parentNode, false);
@@ -92,6 +150,12 @@ end
 
 % Remove the csv folder
 rmdir([path,'csv_',file],'s');
+
+% Correct all the time vectors
+for ii = 1:length(csv_files)
+    fds.fdata{7,ii+1}(:,1) = (fds.fdata{7,ii+1}(:,1) - t_min)/1e6;
+    
+end
 
 %% Update KSID
 fds = kVIS_fdsUpdateAttributes(fds);
