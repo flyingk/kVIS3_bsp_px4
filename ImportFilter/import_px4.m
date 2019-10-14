@@ -141,7 +141,12 @@ for ii = 1:length(csv_files)
         DAT = [ DAT, DAT(:,2).*DAT(:,4), DAT(:,3).*DAT(:,5) ];
         
     end
-        
+         
+    if strcmp(groupName,'vehicle_gps_position_0')
+        % Fix GPS data
+        DAT(:,3:4) = DAT(:,3:4) ./ 1e7;
+    end
+    
     
     % Generate the kVIS data structure
     fds = kVIS_fdsAddTreeLeaf(fds, groupName, varNames, varNames, varUnits, varFrames, DAT, parentNode, false);
