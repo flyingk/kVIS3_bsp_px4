@@ -130,6 +130,34 @@ for ii = 1:length(csv_files)
         DAT = [ DAT, euler_angles ];
         
     end
+
+    if strcmp(groupName,'vehicle_local_position_0')
+        % Add extra stuff to the labelling
+        varNames  = [varNames; {'v'}];
+        varUnits  = [varUnits; {'m/s' }];
+        varFrames = [varFrames;{'earth'}];
+        
+        % Convert quaternions to euler angles and store
+        Vx = DAT(:,11);
+        Vy = DAT(:,12);
+        V = sqrt(Vx.*Vx + Vy.*Vy);
+        DAT = [ DAT, V ];
+        
+    end
+    
+    if strcmp(groupName,'vehicle_local_position_setpoint_0')
+        % Add extra stuff to the labelling
+        varNames  = [varNames; {'v'}];
+        varUnits  = [varUnits; {'m/s' }];
+        varFrames = [varFrames;{'earth'}];
+        
+        % Convert quaternions to euler angles and store
+        Vx = DAT(:,7);
+        Vy = DAT(:,8);
+        V = sqrt(Vx.*Vx + Vy.*Vy);
+        DAT = [ DAT, V ];
+        
+    end
     
     if strcmp(groupName,'battery_status_0')
         % Add extra stuff to the labelling

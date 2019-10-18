@@ -10,5 +10,6 @@ lat = kVIS_fdsGetChannel(fds, group, 'lat');
 
 alt = kVIS_fdsGetChannel(fds, group, 'alt');
 alt(alt < 0) = 0;
+alt = alt - min(alt);
 
 end
