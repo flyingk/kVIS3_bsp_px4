@@ -160,8 +160,6 @@ end
 %% Update KSID
 fds = kVIS_fdsUpdateAttributes(fds);
 
-fds = kVIS_fdsGenerateTexLabels(fds);
-
 kVIS_addDataSet(hObject, fds, []);
 
 return
