@@ -28,14 +28,15 @@ files = dir([root_directory,'\**\*.ulg']);
 for ii = 1:numel(files)
     
     %% Import ulog File
-    filename = [files(ii).folder,'\',files(ii).name];
-    fprintf('%d / %d : Processing %s\n',ii,length(files),filename);
+    file = [files(ii).folder,'\',files(ii).name];
+    [pathstr,name,ext] = fileparts(file);
+    fprintf('%d / %d : Processing %s\n',ii,length(files),file);
     
-    fds = import_px4(filename);
+    fds = import_px4(file);
     
     %% Update KSID
     fds = kVIS_fdsUpdateAttributes(fds);
-    kVIS_addDataSet(hObject, fds, []);
+    kVIS_addDataSet(hObject, fds, matlab.lang.makeValidName(name));
     
 end
 

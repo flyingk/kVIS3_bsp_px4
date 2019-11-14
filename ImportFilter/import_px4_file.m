@@ -27,8 +27,11 @@ function [] = import_px4_file(hObject, ~)
 if file==0
     warning('Error loading file.')
     return
+    
 else
     file = fullfile(pathname,file);
+    [pathstr,name,ext] = fileparts(file);
+    
 end
 
 %% Import File
@@ -36,7 +39,7 @@ fds = import_px4(file);
 
 %% Update KSID
 fds = kVIS_fdsUpdateAttributes(fds);
-kVIS_addDataSet(hObject, fds, []);
+kVIS_addDataSet(hObject, fds, matlab.lang.makeValidName(name));
 
 return
 
