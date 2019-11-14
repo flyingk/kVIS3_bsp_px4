@@ -18,23 +18,11 @@
 % You should have received a copy of the GNU General Public License
 % along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-function [] = import_px4(hObject, ~)
+function fds = import_px4(file)
 
-% PX4 Log file
-[file, pathname] = uigetfile('*.ulg');
-
-if (file==0)
-    file = 'log_366_2019-10-8-10-35-52.ulg';
-    pathname = 'C:\Users\matt\OneDrive\Aircraft\Flying_Ambulance\logs\2019-10-08_Field_Trip\';
-end
-    
-
-% Load file
 if file==0
     warning('Error loading file.')
     return
-else
-    file = fullfile(pathname,file);
 end
 
 tic
@@ -190,10 +178,6 @@ for ii = 1:length(csv_files)
     
 end
 
-%% Update KSID
-fds = kVIS_fdsUpdateAttributes(fds);
-
-kVIS_addDataSet(hObject, fds, []);
-
+%% Return the fds struct
 return
 
