@@ -96,8 +96,14 @@ for ii = 1:length(csv_files)
         varUnits  = [varUnits; {'deg' };{'deg'  };{'deg' }];
         varFrames = [varFrames;{'body'};{'body' };{'body'}];
         
+        % Find which variables to use
+        q0 = DAT(:,strcmp(varNames,'q_0'));
+        q1 = DAT(:,strcmp(varNames,'q_1'));
+        q2 = DAT(:,strcmp(varNames,'q_2'));
+        q3 = DAT(:,strcmp(varNames,'q_3'));
+        
         % Convert quaternions to euler angles and store
-        quat_angles = DAT(:,5:8);
+        quat_angles = [q0, q1, q2, q3];
         euler_angles = q2e(quat_angles)*180.0/pi;
         DAT = [ DAT, euler_angles ];
         
@@ -112,8 +118,14 @@ for ii = 1:length(csv_files)
         varUnits  = [varUnits; {'deg' };{'deg'  };{'deg' }];
         varFrames = [varFrames;{'body'};{'body' };{'body'}];
         
+        % Find which variables to use
+        q0c = DAT(:,strcmp(varNames,'q_d_0'));
+        q1c = DAT(:,strcmp(varNames,'q_d_1'));
+        q2c = DAT(:,strcmp(varNames,'q_d_2'));
+        q3c = DAT(:,strcmp(varNames,'q_d_3'));
+        
         % Convert quaternions to euler angles and store
-        quat_angles = DAT(:,6:9);
+        quat_angles = [q0c, q1c, q2c, q3c];
         euler_angles = q2e(quat_angles)*180.0/pi;
         DAT = [ DAT, euler_angles ];
         
@@ -125,9 +137,9 @@ for ii = 1:length(csv_files)
         varUnits  = [varUnits; {'m/s' }];
         varFrames = [varFrames;{'earth'}];
         
-        % Convert quaternions to euler angles and store
-        Vx = DAT(:,11);
-        Vy = DAT(:,12);
+        % Add total speed channel
+        Vx = DAT(:,strcmp(varNames,'vx'));
+        Vy = DAT(:,strcmp(varNames,'vy'));
         V = sqrt(Vx.*Vx + Vy.*Vy);
         DAT = [ DAT, V ];
         
@@ -139,9 +151,9 @@ for ii = 1:length(csv_files)
         varUnits  = [varUnits; {'m/s' }];
         varFrames = [varFrames;{'earth'}];
         
-        % Convert quaternions to euler angles and store
-        Vx = DAT(:,7);
-        Vy = DAT(:,8);
+        % Add total speed channel
+        Vx = DAT(:,strcmp(varNames,'vx'));
+        Vy = DAT(:,strcmp(varNames,'vy'));
         V = sqrt(Vx.*Vx + Vy.*Vy);
         DAT = [ DAT, V ];
         
@@ -153,14 +165,25 @@ for ii = 1:length(csv_files)
         varUnits  = [varUnits; {'W'}; {'W'}];
         varFrames = [varFrames;{'N/A'}; {'N/A'}];
         
+        % Find which variables to use
+        V = DAT(:,strcmp(varNames,'voltage_v'));
+        I = DAT(:,strcmp(varNames,'current_a'));
+        Vf = DAT(:,strcmp(varNames,'voltage_filtered_v'));
+        If = DAT(:,strcmp(varNames,'current_filtered_a'));
+        
         % Add power into the system
-        DAT = [ DAT, DAT(:,2).*DAT(:,4), DAT(:,3).*DAT(:,5) ];
+        DAT = [ DAT, V.*I, Vf.*If ];
         
     end
          
     if strcmp(groupName,'vehicle_gps_position_0')
+        
+        % Find which variables to use
+        lat_pos = find(strcmp(varNames,'lat'));
+        lon_pos = find(strcmp(varNames,'lon'));
+        
         % Fix GPS data
-        DAT(:,3:4) = DAT(:,3:4) ./ 1e7;
+        DAT(:,[lat_pos,lon_pos]) = DAT(:,[lat_pos,lon_pos]) ./ 1e7;
     end
     
     
