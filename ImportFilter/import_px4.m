@@ -52,6 +52,13 @@ evalc(['!ulog2csv -o ',[path,'csv_',file,'\'],' ',[path,file,extension]]);
 % Loop through each file in the csv folder
 csv_files = dir([csv_folder,'\**\*.csv']);
 
+% Warn if no files created
+if (isempty(csv_files))
+    fprintf('\n\n***************************************\n\n');
+    fprintf('pyulog (or python) may not be installed properly.  Check that you can manually convert .ulg files to csv\n\n');
+    fprintf('\n\n***************************************\n\n');
+end
+
 t_min = inf;
 
 for ii = 1:length(csv_files)
