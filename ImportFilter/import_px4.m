@@ -20,9 +20,11 @@
 
 function fds = import_px4(file)
 
-if file==0
-    warning('Error loading file.')
-    return
+if ~nargin
+    file = 'log_28_2021-4-2-16-38-26.ulg';  % Small (0.5 MB)
+%     file = 'log_13_2019-9-14-02-08-36.ulg'; % Medium (7 MB)
+%     file = 'log_0_2019-9-13-16-25-54.ulg';  % Large (25 MB)
+
 end
 
 tic
@@ -37,177 +39,250 @@ fds.BoardSupportPackage = 'PX4';
 
 [fds, parentNode] = kVIS_fdsAddTreeBranch(fds, 0, 'PX4_data');
 
+%% Convert ulg file into struct to read
+ulg = ulgReader(file);
+% ulg = ulgReader_csv(file); % old way of doing things, might be needed in the future
 
-%% Convert ulg into csv files
-[path, file, extension] = fileparts(file); ...
-    path = [path,'\'];
+t_start = inf;
+t_end = -inf;
 
-csv_folder = [path,'csv_',file];
-mkdir([path,'csv_',file]);
+%% Convert into something kVIS can use
+logs = fieldnames(ulg.logs);
 
-% Convert file to CSV
-evalc(['!ulog2csv -o ',[path,'csv_',file,'\'],' ',[path,file,extension]]);
-
-%% read data
-% Loop through each file in the csv folder
-csv_files = dir([csv_folder,'\**\*.csv']);
-
-% Warn if no files created
-if (isempty(csv_files))
-    fprintf('\n\n***************************************\n\n');
-    fprintf('pyulog (or python) may not be installed properly.  Check that you can manually convert .ulg files to csv\n\n');
-    fprintf('\n\n***************************************\n\n');
-end
-
-t_min = inf;
-
-for ii = 1:length(csv_files)
-    % Print debug stuff
-    data_path = csv_files(ii).folder;
-    data_file = csv_files(ii).name;
-    fprintf('Found file  << %s >>\n',data_file);
+% Loop through each group name
+for ii = 1:numel(logs)
     
-    % Get data stream name
-    groupName = csv_files(ii).name(length(file)+2:end-4);
+    % Extract log name
+    groupName = logs{ii};
     fprintf('\tImporting field %s\n',groupName);
     
-    % Get all the headers and stuff
-    data = readtable([data_path,'\',data_file]);
-    varNames = data.Properties.VariableNames'; ...
-        varNames{1} = 'Time';
-    n_channels = numel(varNames);
-    
-    varUnits = repmat({'N/A'}, n_channels,1); ...
-        varUnits{1} = 's';
+    % Get the variable names/units/frames
+    varNames = fieldnames(ulg.logs.(groupName)); ...
+        n_channels = numel(varNames); ...
+        n_samples = numel(ulg.logs.(groupName).(varNames{1}));
+    varUnits = repmat({'N/A'}, n_channels,1);
     varFrames = repmat({'Unknown Frame'}, n_channels,1);
-    
-    % Import the data
-    DAT = nan(size(data));
-    for jj = 1:numel(varNames)
-        % I've got this importing individual rows here in case we want to
-        % preserve any non-numeric data and put it somewhere
-        %fprintf('\t\tFound channel %50s\n', varNames{jj});
-        DAT(:,jj) = table2array(data(:,jj));
         
-        % Remove trailing underscores
-        if strcmp(varNames{jj}(end),'_')
-            varNames{jj} = varNames{jj}(1:end-1);
-        end
-            
+    % Get the data
+    data = nan(n_samples,n_channels);
+    for jj = 1:n_channels
+        data(:,jj) = ulg.logs.(groupName).(varNames{jj});
     end
     
+    % Fix the time element
+    varNames{1} = 'Time';
+    varUnits{1} = 's';
+    varFrames{1} = '';
+    data(:,1) = data(:,1) / 1e6;
+    
+    % Find t_start and t_end
+    t_start = min(t_start,data(1,1));
+    t_end   = max(t_end  ,data(end,1));
+    
+
     % Add special fields that PX4 doesn't normally have (because it's stupid)
-    if strcmp(groupName,'vehicle_attitude_0')
-        % Add extra stuff to the labelling
-        varNames  = [varNames; {'roll'};{'pitch'};{'yaw' }];
-        varUnits  = [varUnits; {'deg' };{'deg'  };{'deg' }];
-        varFrames = [varFrames;{'body'};{'body' };{'body'}];
-        
-        % Find which variables to use
-        q0 = DAT(:,strcmp(varNames,'q_0'));
-        q1 = DAT(:,strcmp(varNames,'q_1'));
-        q2 = DAT(:,strcmp(varNames,'q_2'));
-        q3 = DAT(:,strcmp(varNames,'q_3'));
-        
-        % Convert quaternions to euler angles and store
-        quat_angles = [q0, q1, q2, q3];
-        euler_angles = q2e(quat_angles)*180.0/pi;
-        DAT = [ DAT, euler_angles ];
-        
-        % Take t_min from the attitude data
-         t_min = min(t_min,DAT(1,1));
-        
-    end
-    
-    if strcmp(groupName,'vehicle_attitude_setpoint_0')
+    if contains(groupName,'vehicle_attitude_setpoint')
         % Add extra stuff to the labelling
         varNames  = [varNames; {'roll_d'};{'pitch_d'};{'yaw_d' }];
         varUnits  = [varUnits; {'deg' };{'deg'  };{'deg' }];
         varFrames = [varFrames;{'body'};{'body' };{'body'}];
         
         % Find which variables to use
-        q0c = DAT(:,strcmp(varNames,'q_d_0'));
-        q1c = DAT(:,strcmp(varNames,'q_d_1'));
-        q2c = DAT(:,strcmp(varNames,'q_d_2'));
-        q3c = DAT(:,strcmp(varNames,'q_d_3'));
+        q0c = data(:,contains(varNames,'q_d_0'));
+        q1c = data(:,contains(varNames,'q_d_1'));
+        q2c = data(:,contains(varNames,'q_d_2'));
+        q3c = data(:,contains(varNames,'q_d_3'));
         
         % Convert quaternions to euler angles and store
         quat_angles = [q0c, q1c, q2c, q3c];
         euler_angles = q2e(quat_angles)*180.0/pi;
-        DAT = [ DAT, euler_angles ];
+        data = [ data, euler_angles ];
         
-    end
+    elseif contains(groupName,'vehicle_attitude')
+        % Add extra stuff to the labelling
+        varNames  = [varNames; {'roll'};{'pitch'};{'yaw' }];
+        varUnits  = [varUnits; {'deg' };{'deg'  };{'deg' }];
+        varFrames = [varFrames;{'body'};{'body' };{'body'}];
+        
+        % Find which variables to use
+        q0 = data(:,contains(varNames,'q_0'));
+        q1 = data(:,contains(varNames,'q_1'));
+        q2 = data(:,contains(varNames,'q_2'));
+        q3 = data(:,contains(varNames,'q_3'));
 
-    if strcmp(groupName,'vehicle_local_position_0')
+        % Convert quaternions to euler angles and store
+        quat_angles = [q0, q1, q2, q3];
+        euler_angles = q2e(quat_angles)*180.0/pi;
+        data = [ data, euler_angles ];
+        
+    elseif contains(groupName,'vehicle_local_position')
         % Add extra stuff to the labelling
         varNames  = [varNames; {'v'}];
         varUnits  = [varUnits; {'m/s' }];
         varFrames = [varFrames;{'earth'}];
         
         % Add total speed channel
-        Vx = DAT(:,strcmp(varNames,'vx'));
-        Vy = DAT(:,strcmp(varNames,'vy'));
+        Vx = data(:,contains(varNames,'vx'));
+        Vy = data(:,contains(varNames,'vy'));
         V = sqrt(Vx.*Vx + Vy.*Vy);
-        DAT = [ DAT, V ];
-        
-    end
+        data = [ data, V ];
     
-    if strcmp(groupName,'vehicle_local_position_setpoint_0')
+    elseif contains(groupName,'vehicle_local_position_setpoint')
         % Add extra stuff to the labelling
         varNames  = [varNames; {'v'}];
         varUnits  = [varUnits; {'m/s' }];
         varFrames = [varFrames;{'earth'}];
         
         % Add total speed channel
-        Vx = DAT(:,strcmp(varNames,'vx'));
-        Vy = DAT(:,strcmp(varNames,'vy'));
+        Vx = data(:,contains(varNames,'vx'));
+        Vy = data(:,contains(varNames,'vy'));
         V = sqrt(Vx.*Vx + Vy.*Vy);
-        DAT = [ DAT, V ];
+        data = [ data, V ];
         
-    end
-    
-    if strcmp(groupName,'battery_status_0')
+    elseif contains(groupName,'battery_status')
         % Add extra stuff to the labelling
         varNames  = [varNames; {'power'}; {'power_filtered'}];
         varUnits  = [varUnits; {'W'}; {'W'}];
         varFrames = [varFrames;{'N/A'}; {'N/A'}];
         
         % Find which variables to use
-        V = DAT(:,strcmp(varNames,'voltage_v'));
-        I = DAT(:,strcmp(varNames,'current_a'));
-        Vf = DAT(:,strcmp(varNames,'voltage_filtered_v'));
-        If = DAT(:,strcmp(varNames,'current_filtered_a'));
+        V  = data(:,contains(varNames,'voltage_v'));
+        I  = data(:,contains(varNames,'current_a'));
+        Vf = data(:,contains(varNames,'voltage_filtered_v'));
+        If = data(:,contains(varNames,'current_filtered_a'));
         
         % Add power into the system
-        DAT = [ DAT, V.*I, Vf.*If ];
+        data = [ data, V.*I, Vf.*If ];
         
-    end
-         
-    if strcmp(groupName,'vehicle_gps_position_0')
+    elseif contains(groupName,'vehicle_gps_position')
         
         % Find which variables to use
-        lat_pos = find(strcmp(varNames,'lat'));
-        lon_pos = find(strcmp(varNames,'lon'));
+        lat_pos = find(contains(varNames,'lat'));
+        lon_pos = find(contains(varNames,'lon'));
         
         % Fix GPS data
-        DAT(:,[lat_pos,lon_pos]) = DAT(:,[lat_pos,lon_pos]) ./ 1e7;
+        data(:,[lat_pos,lon_pos]) = data(:,[lat_pos,lon_pos]) ./ 1e7;
     end
-    
-    
+      
     % Generate the kVIS data structure
-    fds = kVIS_fdsAddTreeLeaf(fds, groupName, varNames, varNames, varUnits, varFrames, DAT, parentNode, false);
+    fds = kVIS_fdsAddTreeLeaf(fds, groupName, varNames, varNames, varUnits, varFrames, data, parentNode, false);
+    
+
+end
+
+
+%% Fix up the time so starts at t = 0
+fds.timeOffset = t_start; t_end = t_end - t_start;
+for ii = 2:numel(fds.fdata(1,:))
+    fds.fdata{fds.fdataRows.data,ii}(:,1) = fds.fdata{fds.fdataRows.data,ii}(:,1) - fds.timeOffset;
+end
+    
+%% Add events based on flight mode changes
+% We can use MODE.ModeNum to work this out
+modeTimes   = kVIS_fdsGetChannel(fds, 'manual_control_setpoint_0','Time');
+modeNumbers = kVIS_fdsGetChannel(fds, 'manual_control_setpoint_0','mode_slot');
+% modeReasons = kVIS_fdsGetChannel(fds, 'manual_control_setpoint_0','data_source');
+
+modeTimes(1) = 0; % Force the first mode time to 0
+
+% Combine short and same mode changes
+if numel(modeTimes > 0.5)
+    ii = 2;
+    while ii < numel(modeNumbers)
+        if modeNumbers(ii-1) == modeNumbers(ii)
+            % Remove entry as mode didn't change
+            modeNumbers(ii) = [];
+            modeTimes(ii)   = [];
+            % modeReasons(ii) = [];
+        else
+            ii = ii+1;
+        end
+    end
+end
+
+% Add a marker for the mode at log's end
+modeTimes(end+1) = t_end;
+modeNumbers(end+1) = modeNumbers(end);
+% modeReasons(end+1) = modeReasons(end);
+
+% Loop through modeTimes and store data
+eventNumber = 0;
+
+for ii = 1:numel(modeTimes)-1
+    % Get info
+    t_in  = modeTimes(ii);
+    t_out = modeTimes(ii+1);
+    
+    % Check if change was valid
+    if t_out-t_in > 0.5
+        
+        modeReason = 'Mode Switch';
+        
+        modeType = modes_PX4_Copter(modeNumbers(ii));
+        
+        % Fill out eList
+        eventNumber = eventNumber+1;
+        eList(eventNumber).type = modeType;
+        eList(eventNumber).start= t_in;
+        eList(eventNumber).end  = t_out;
+        eList(eventNumber).description = modeReason;
+        eList(eventNumber).plotDef='';
+    end
         
 end
 
-% Remove the csv folder
-rmdir([path,'csv_',file],'s');
-
-% Correct all the time vectors
-for ii = 1:length(csv_files)
-    fds.fdata{7,ii+1}(:,1) = (fds.fdata{7,ii+1}(:,1) - t_min)/1e6;
-    
-end
+% Add eList to eventList
+fds.eventList = eList;
 
 %% Return the fds struct
+fprintf('File imported in %.2f seconds\n',toc);
+
 return
 
+end
+
+function modeName = modes_PX4_Copter(modeNumber)
+% From https://github.com/PX4/PX4-Autopilot/blob/master/src/modules/commander/px4_custom_mode.h#L45
+
+% These don't seem to match up so who knows what's going on...
+
+switch (modeNumber)
+	case 1; modeName = 'MANUAL';
+	case 2; modeName = 'ALTCTL';
+	case 3; modeName = 'POSCTL';
+	case 4; modeName = 'POSITION';
+	case 5; modeName = 'OFFBOARD';
+	case 6; modeName = 'OFFBOARD';
+	case 7; modeName = 'STABILIZED';
+	case 8; modeName = 'RATTITUDE_LEGACY';
+	case 9; modeName = 'SIMPLE';
+    otherwise; modeName = ['UNKNOWN_(',num2str(modeNumber),')'];
+end
+return
+end
+
+function euler_angles = q2e(q)
+%
+%
+% Q2E converts Quaternions to roll-pitch-yaw (1-2-3) sequence Euler angles
+%
+% References:
+% + Dan Newman: C130 Kalman Filter - checked
+% + Diebel2006: Representing Attitude: Euler Angles, Unit Quaternions, and Rotation Vectors.pdf - checked
+%
+% Output angles in degrees
+
+q0 = q(:,1);
+q1 = q(:,2);
+q2 = q(:,3);
+q3 = q(:,4);
+
+% convert quaternions to euler angles 1-2-3
+phi   = atan2( 2*(q2.*q3 + q0.*q1), q0.^2 - q1.^2 - q2.^2 + q3.^2);
+theta = asin(2*(q0.*q2 - q1.*q3));
+psi   = atan2( 2*(q1.*q2 + q0.*q3), q0.^2 + q1.^2 - q2.^2 - q3.^2);
+
+euler_angles = [phi,theta,psi];
+
+return
+end
