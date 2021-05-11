@@ -252,7 +252,7 @@ switch (modeNumber)
 	case 3; modeName = 'POSCTL';
 	case 4; modeName = 'POSITION';
 	case 5; modeName = 'OFFBOARD';
-	case 6; modeName = 'OFFBOARD';
+	case 6; modeName = 'LAND';
 	case 7; modeName = 'STABILIZED';
 	case 8; modeName = 'RATTITUDE_LEGACY';
 	case 9; modeName = 'SIMPLE';
