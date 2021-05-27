@@ -88,10 +88,10 @@ for ii = 1:numel(logs)
         varFrames = [varFrames;{'body'};{'body' };{'body'}];
         
         % Find which variables to use
-        q0c = data(:,contains(varNames,'q_d_0'));
-        q1c = data(:,contains(varNames,'q_d_1'));
-        q2c = data(:,contains(varNames,'q_d_2'));
-        q3c = data(:,contains(varNames,'q_d_3'));
+        q0c = data(:,strcmp(varNames,'q_d_0'));
+        q1c = data(:,strcmp(varNames,'q_d_1'));
+        q2c = data(:,strcmp(varNames,'q_d_2'));
+        q3c = data(:,strcmp(varNames,'q_d_3'));
         
         % Convert quaternions to euler angles and store
         quat_angles = [q0c, q1c, q2c, q3c];
@@ -105,15 +105,27 @@ for ii = 1:numel(logs)
         varFrames = [varFrames;{'body'};{'body' };{'body'}];
         
         % Find which variables to use
-        q0 = data(:,contains(varNames,'q_0'));
-        q1 = data(:,contains(varNames,'q_1'));
-        q2 = data(:,contains(varNames,'q_2'));
-        q3 = data(:,contains(varNames,'q_3'));
+        q0 = data(:,strcmp(varNames,'q_0'));
+        q1 = data(:,strcmp(varNames,'q_1'));
+        q2 = data(:,strcmp(varNames,'q_2'));
+        q3 = data(:,strcmp(varNames,'q_3'));
 
         % Convert quaternions to euler angles and store
         quat_angles = [q0, q1, q2, q3];
         euler_angles = q2e(quat_angles)*180.0/pi;
         data = [ data, euler_angles ];
+        
+    elseif contains(groupName,'vehicle_local_position_setpoint')
+        % Add extra stuff to the labelling
+        varNames  = [varNames; {'v'}];
+        varUnits  = [varUnits; {'m/s' }];
+        varFrames = [varFrames;{'earth'}];
+        
+        % Add total speed channel
+        Vx = data(:,strcmp(varNames,'vx'));
+        Vy = data(:,strcmp(varNames,'vy'));
+        V = sqrt(Vx.*Vx + Vy.*Vy);
+        data = [ data, V ];
         
     elseif contains(groupName,'vehicle_local_position')
         % Add extra stuff to the labelling
@@ -122,20 +134,8 @@ for ii = 1:numel(logs)
         varFrames = [varFrames;{'earth'}];
         
         % Add total speed channel
-        Vx = data(:,contains(varNames,'vx'));
-        Vy = data(:,contains(varNames,'vy'));
-        V = sqrt(Vx.*Vx + Vy.*Vy);
-        data = [ data, V ];
-    
-    elseif contains(groupName,'vehicle_local_position_setpoint')
-        % Add extra stuff to the labelling
-        varNames  = [varNames; {'v'}];
-        varUnits  = [varUnits; {'m/s' }];
-        varFrames = [varFrames;{'earth'}];
-        
-        % Add total speed channel
-        Vx = data(:,contains(varNames,'vx'));
-        Vy = data(:,contains(varNames,'vy'));
+        Vx = data(:,strcmp(varNames,'vx'));
+        Vy = data(:,strcmp(varNames,'vy'));
         V = sqrt(Vx.*Vx + Vy.*Vy);
         data = [ data, V ];
         
@@ -146,10 +146,10 @@ for ii = 1:numel(logs)
         varFrames = [varFrames;{'N/A'}; {'N/A'}];
         
         % Find which variables to use
-        V  = data(:,contains(varNames,'voltage_v'));
-        I  = data(:,contains(varNames,'current_a'));
-        Vf = data(:,contains(varNames,'voltage_filtered_v'));
-        If = data(:,contains(varNames,'current_filtered_a'));
+        V  = data(:,strcmp(varNames,'voltage_v'));
+        I  = data(:,strcmp(varNames,'current_a'));
+        Vf = data(:,strcmp(varNames,'voltage_filtered_v'));
+        If = data(:,strcmp(varNames,'current_filtered_a'));
         
         % Add power into the system
         data = [ data, V.*I, Vf.*If ];
@@ -157,8 +157,8 @@ for ii = 1:numel(logs)
     elseif contains(groupName,'vehicle_gps_position')
         
         % Find which variables to use
-        lat_pos = find(contains(varNames,'lat'));
-        lon_pos = find(contains(varNames,'lon'));
+        lat_pos = find(strcmp(varNames,'lat'));
+        lon_pos = find(strcmp(varNames,'lon'));
         
         % Fix GPS data
         data(:,[lat_pos,lon_pos]) = data(:,[lat_pos,lon_pos]) ./ 1e7;
