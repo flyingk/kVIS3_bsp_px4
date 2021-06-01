@@ -163,10 +163,81 @@ for ii = 1:numel(logs)
         % Fix GPS data
         data(:,[lat_pos,lon_pos]) = data(:,[lat_pos,lon_pos]) ./ 1e7;
     end
+    
+    % Some channels are from embedded structures (denoted with __) - let's
+    % re-embed them
+    if max(contains(varNames,'__'))
+        embeddedLog = struct();
+        idx = find(contains(varNames,'__'));
+                
+        % Save the embedded data into a struct so we can deal with it later
+        for jj = 1:numel(idx)
+            varName = varNames{idx(jj)};
+            loc = strfind(varName,'__');
+            parentName = varName(1:loc-1);
+            varName(1:loc+1) = [];
+
+            % Save the data
+            embeddedLog.(parentName).(varName).data  = data(:,idx(jj));
+            embeddedLog.(parentName).(varName).unit  = varUnits(idx(jj));
+            embeddedLog.(parentName).(varName).frame = varFrames(idx(jj));
+         
+        end
+        
+        % Clear out the fields we've embedded
+        varNames(idx)  = [];
+        varUnits(idx)  = [];
+        varFrames(idx) = [];
+        data(:,idx)    = [];
+                
+    end
       
     % Generate the kVIS data structure
     fds = kVIS_fdsAddTreeLeaf(fds, groupName, varNames, varNames, varUnits, varFrames, data, parentNode, false);
     
+    % Embed any logs that we've found along the way
+    if exist('embeddedLog','var')
+        
+        % Add leaves for the tempGroup stuff
+        % Add each element of tempGroup into the fds
+        parents = fieldnames(embeddedLog);
+        parentID   = size(fds.fdata,2);
+        
+        for jj = 1:numel(parents)
+            parentName = parents{jj};
+            childNames = fieldnames(embeddedLog.(parentName));
+            
+            childData   = [];
+            childUnits  = {};
+            childFrames = {};
+            
+            for kk = 1:numel(childNames)
+                childName = childNames{kk};
+                childUnits(end+1,1)  = embeddedLog.(parentName).(childName).unit;
+                childFrames(end+1,1) = embeddedLog.(parentName).(childName).frame;
+                childData(:,end+1)   = embeddedLog.(parentName).(childName).data;
+                                
+            end
+            
+            % Correct the time stamp (assumed first)
+            childNames{1} = 'Time';
+            childUnits{1} = 's';
+            childFrames{1} = '';
+            childData(:,1) = childData(:,1) / 1e6;
+             
+            % Add the emmbeded data leaf (only if it contains data)
+            if max(max(abs(childData(:,2:end)))) > 0
+                fprintf('\t\tEmbedding %s\n',parentName);
+                fds = kVIS_fdsAddTreeLeaf(fds, parentName, childNames, childNames, childUnits, childFrames, childData, parentID, false);
+            else
+                fprintf('\t\tSkipping  %s (empty)\n',parentName);
+            end
+        
+        end
+        
+        % We're done with this data
+        clear embeddedLog;
+    end
 
 end
 
