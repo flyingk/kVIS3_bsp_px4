@@ -24,7 +24,6 @@ if ~nargin
     file = 'log_28_2021-4-2-16-38-26.ulg';  % Small (0.5 MB)
 %     file = 'log_13_2019-9-14-02-08-36.ulg'; % Medium (7 MB)
 %     file = 'log_0_2019-9-13-16-25-54.ulg';  % Large (25 MB)
-
 end
 
 tic
@@ -163,10 +162,81 @@ for ii = 1:numel(logs)
         % Fix GPS data
         data(:,[lat_pos,lon_pos]) = data(:,[lat_pos,lon_pos]) ./ 1e7;
     end
+    
+    % Some channels are from embedded structures (denoted with __) - let's
+    % re-embed them
+    if max(contains(varNames,'__'))
+        embeddedLog = struct();
+        idx = find(contains(varNames,'__'));
+                
+        % Save the embedded data into a struct so we can deal with it later
+        for jj = 1:numel(idx)
+            varName = varNames{idx(jj)};
+            loc = strfind(varName,'__');
+            parentName = varName(1:loc-1);
+            varName(1:loc+1) = [];
+
+            % Save the data
+            embeddedLog.(parentName).(varName).data  = data(:,idx(jj));
+            embeddedLog.(parentName).(varName).unit  = varUnits(idx(jj));
+            embeddedLog.(parentName).(varName).frame = varFrames(idx(jj));
+         
+        end
+        
+        % Clear out the fields we've embedded
+        varNames(idx)  = [];
+        varUnits(idx)  = [];
+        varFrames(idx) = [];
+        data(:,idx)    = [];
+                
+    end
       
     % Generate the kVIS data structure
     fds = kVIS_fdsAddTreeLeaf(fds, groupName, varNames, varNames, varUnits, varFrames, data, parentNode, false);
     
+    % Embed any logs that we've found along the way
+    if exist('embeddedLog','var')
+        
+        % Add leaves for the tempGroup stuff
+        % Add each element of tempGroup into the fds
+        parents = fieldnames(embeddedLog);
+        parentID   = size(fds.fdata,2);
+        
+        for jj = 1:numel(parents)
+            parentName = parents{jj};
+            childNames = fieldnames(embeddedLog.(parentName));
+            
+            childData   = [];
+            childUnits  = {};
+            childFrames = {};
+            
+            for kk = 1:numel(childNames)
+                childName = childNames{kk};
+                childUnits(end+1,1)  = embeddedLog.(parentName).(childName).unit;
+                childFrames(end+1,1) = embeddedLog.(parentName).(childName).frame;
+                childData(:,end+1)   = embeddedLog.(parentName).(childName).data;
+                                
+            end
+            
+            % Correct the time stamp (assumed first)
+            childNames{1} = 'Time';
+            childUnits{1} = 's';
+            childFrames{1} = '';
+            childData(:,1) = childData(:,1) / 1e6;
+             
+            % Add the emmbeded data leaf (only if it contains data)
+            if max(max(abs(childData(:,2:end)))) > 0
+                fprintf('\t\tEmbedding %s\n',parentName);
+                fds = kVIS_fdsAddTreeLeaf(fds, parentName, childNames, childNames, childUnits, childFrames, childData, parentID, false);
+            else
+                fprintf('\t\tSkipping  %s (empty)\n',parentName);
+            end
+        
+        end
+        
+        % We're done with this data
+        clear embeddedLog;
+    end
 
 end
 
@@ -179,60 +249,75 @@ end
     
 %% Add events based on flight mode changes
 % We can use MODE.ModeNum to work this out
-modeTimes   = kVIS_fdsGetChannel(fds, 'manual_control_setpoint_0','Time');
-modeNumbers = kVIS_fdsGetChannel(fds, 'manual_control_setpoint_0','mode_slot');
-% modeReasons = kVIS_fdsGetChannel(fds, 'manual_control_setpoint_0','data_source');
+mode_switch_channels = ['manual_control_setpoint_0';'manual_control_switches_0'];
+mode_switch_found = 0;
+for ii = 1:size(mode_switch_channels,1)
+    mode_switch_channel = mode_switch_channels(ii,:);
+    modeTimes   = kVIS_fdsGetChannel(fds, mode_switch_channel,'Time');
+    modeNumbers = kVIS_fdsGetChannel(fds, mode_switch_channel,'mode_slot');
+    % modeReasons = kVIS_fdsGetChannel(fds, 'manual_control_setpoint_0','data_source');
 
-modeTimes(1) = 0; % Force the first mode time to 0
+    if (modeNumbers ~= -1)
+        mode_switch_found = 1;
+        break
+    end
+end
 
-% Combine short and same mode changes
-if numel(modeTimes > 0.5)
-    ii = 2;
-    while ii < numel(modeNumbers)
-        if modeNumbers(ii-1) == modeNumbers(ii)
-            % Remove entry as mode didn't change
-            modeNumbers(ii) = [];
-            modeTimes(ii)   = [];
-            % modeReasons(ii) = [];
-        else
-            ii = ii+1;
+if (mode_switch_found ~= 1)
+    % We probably didn't get modes here 
+    fprintf("Couldn't automatically extract mode changes\n");
+else 
+    modeTimes(1) = 0; % Force the first mode time to 0
+    
+    % Combine short and same mode changes
+    if numel(modeTimes > 0.5)
+        ii = 2;
+        while ii < numel(modeNumbers)
+            if modeNumbers(ii-1) == modeNumbers(ii)
+                % Remove entry as mode didn't change
+                modeNumbers(ii) = [];
+                modeTimes(ii)   = [];
+                % modeReasons(ii) = [];
+            else
+                ii = ii+1;
+            end
         end
     end
-end
-
-% Add a marker for the mode at log's end
-modeTimes(end+1) = t_end;
-modeNumbers(end+1) = modeNumbers(end);
-% modeReasons(end+1) = modeReasons(end);
-
-% Loop through modeTimes and store data
-eventNumber = 0;
-
-for ii = 1:numel(modeTimes)-1
-    % Get info
-    t_in  = modeTimes(ii);
-    t_out = modeTimes(ii+1);
     
-    % Check if change was valid
-    if t_out-t_in > 0.5
+    % Add a marker for the mode at log's end
+    modeTimes(end+1) = t_end;
+    modeNumbers(end+1) = modeNumbers(end);
+    % modeReasons(end+1) = modeReasons(end);
+    
+    % Loop through modeTimes and store data
+    eventNumber = 0;
+    
+    for ii = 1:numel(modeTimes)-1
+        % Get info
+        t_in  = modeTimes(ii);
+        t_out = modeTimes(ii+1);
         
-        modeReason = 'Mode Switch';
-        
-        modeType = modes_PX4_Copter(modeNumbers(ii));
-        
-        % Fill out eList
-        eventNumber = eventNumber+1;
-        eList(eventNumber).type = modeType;
-        eList(eventNumber).start= t_in;
-        eList(eventNumber).end  = t_out;
-        eList(eventNumber).description = modeReason;
-        eList(eventNumber).plotDef='';
+        % Check if change was valid
+        if t_out-t_in > 0.5
+            
+            modeReason = 'Mode Switch';
+            
+            modeType = modes_PX4_Copter(modeNumbers(ii));
+            
+            % Fill out eList
+            eventNumber = eventNumber+1;
+            eList(eventNumber).type = modeType;
+            eList(eventNumber).start= t_in;
+            eList(eventNumber).end  = t_out;
+            eList(eventNumber).description = modeReason;
+            eList(eventNumber).plotDef='';
+        end
+            
     end
-        
+    
+    % Add eList to eventList
+    fds.eventList = eList;
 end
-
-% Add eList to eventList
-fds.eventList = eList;
 
 %% Return the fds struct
 fprintf('File imported in %.2f seconds\n',toc);
